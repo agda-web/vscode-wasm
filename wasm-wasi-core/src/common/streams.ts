@@ -35,6 +35,10 @@ export abstract class Stream {
 		return this.fillLevel;
 	}
 
+	public ready() {
+		return this.fillLevel > 0;
+	}
+
 	public async write(chunk: Uint8Array): Promise<void> {
 		// We don't write chunks of size 0 since they would indicate the end of the stream
 		// on the receiving side. If we want to support closing a stream via a write we should
@@ -66,6 +70,13 @@ export abstract class Stream {
 			}
 			throw error;
 		}
+	}
+
+	public async pollRead(): Promise<void> {
+		if (this.ready()) {
+			return;
+		}
+		await this.awaitData();
 	}
 
 	public async read(): Promise<Uint8Array>;
@@ -200,6 +211,13 @@ export class WritableStream extends Stream implements Writable {
 		this.encoding = encoding ?? 'utf-8';
 		this.encoder = RAL().TextEncoder.create(this.encoding);
 		this.streamState = StreamState.open;
+	}
+
+	public ready() {
+		if (this.streamState === StreamState.closed) {
+			return true;
+		}
+		return super.ready();
 	}
 
 	public write(chunk: Uint8Array): Promise<void>;

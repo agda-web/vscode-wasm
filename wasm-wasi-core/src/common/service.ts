@@ -302,7 +302,7 @@ export namespace EnvironmentWasiService {
 		};
 
 		function handleError(error: any, def: errno = Errno.badf): errno {
-			if (error instanceof WasiError) {
+			if (error?._isWasiError && typeof error.errno === 'number') {
 				return error.errno;
 			} else if (error instanceof vscode.FileSystemError) {
 				return code2Wasi.asErrno(error.code);
@@ -935,26 +935,52 @@ export namespace DeviceWasiService {
 			let subscription_offset: ptr = input;
 			const events: Literal<event>[] = [];
 			let timeout: bigint | undefined;
+			let hasClock = false;
+
+			const subs: subscription[] = [];
 			for (let i = 0; i < subscriptions; i++) {
 				const subscription = Subscription.create(memory, subscription_offset);
+				subs.push(subscription);
+				if (subscription.u.type === Eventtype.clock) {
+					hasClock = true;
+				}
+				subscription_offset += Subscription.size;
+			}
+
+			const waitThunks: Promise<Literal<event>>[] = [];
+
+			for (let i = 0; i < subscriptions; i++) {
+				const subscription = subs[i];
 				const u = subscription.u;
 				switch (u.type) {
 					case Eventtype.clock:
 						const clockResult = handleClockSubscription(subscription);
-						timeout = clockResult.timeout;
+						if (timeout === undefined || timeout < clockResult.timeout) {
+							timeout = clockResult.timeout;
+						}
 						events.push(clockResult.event);
 						break;
 					case Eventtype.fd_read:
-						const readEvent = await handleReadSubscription(subscription);
-						events.push(readEvent);
+						if (hasClock) {
+							const readEvent = await handleReadSubscription(subscription, false);
+							if (readEvent) {
+								events.push(readEvent);
+							}
+						} else {
+							waitThunks.push(handleReadSubscription(subscription, true));
+						}
 						break;
 					case Eventtype.fd_write:
 						const writeEvent = handleWriteSubscription(subscription);
 						events.push(writeEvent);
 						break;
 				}
-				subscription_offset += Subscription.size;
 			}
+
+			(await Promise.all(waitThunks)).forEach(evt => {
+				events.push(evt);
+			});
+
 			return { events, timeout };
 		}
 
@@ -980,7 +1006,10 @@ export namespace DeviceWasiService {
 			return { event: result, timeout };
 		}
 
-		async function handleReadSubscription(subscription: subscription): Promise<Literal<event>> {
+		async function handleReadSubscription(subscription: subscription, wait: true): Promise<Literal<event>>;
+		async function handleReadSubscription(subscription: subscription, wait: false): Promise<null | Literal<event>>;
+		async function handleReadSubscription(subscription: subscription, wait: boolean): Promise<null | Literal<event>>;
+		async function handleReadSubscription(subscription: subscription, wait: boolean): Promise<null | Literal<event>> {
 			const fd = subscription.u.fd_read.file_descriptor;
 			try {
 				const fileDescriptor = getFileDescriptor(fd);
@@ -988,7 +1017,13 @@ export namespace DeviceWasiService {
 					throw new WasiError(Errno.perm);
 				}
 
-				const available = await getDeviceDriver(fileDescriptor).fd_bytesAvailable(fileDescriptor);
+				const driver = getDeviceDriver(fileDescriptor);
+				const available = await driver.fd_bytesAvailable(fileDescriptor, wait);
+				// FIXME: a closed stream is always available but fd_bytesAvailable may return zero
+				// to support EOT, we need a way to know the readiness
+				if (!wait && available === 0n) {
+					return null;
+				}
 				return {
 					userdata: subscription.userdata,
 					type: Eventtype.fd_read,
@@ -1041,7 +1076,7 @@ export namespace DeviceWasiService {
 		}
 
 		function handleError(error: any, def: errno = Errno.badf): errno {
-			if (error instanceof WasiError) {
+			if (error._isWasiError) {
 				return error.errno;
 			} else if (error instanceof vscode.FileSystemError) {
 				return code2Wasi.asErrno(error.code);

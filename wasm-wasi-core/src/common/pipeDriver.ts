@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { size } from './baseTypes';
-import { Errno, fd, fdflags, fdstat, filestat, Filetype, Rights, rights, WasiError } from './wasi';
+import { Errno, fd, fdflags, fdstat, filestat, filesize, Filetype, Rights, rights, WasiError } from './wasi';
 import { CharacterDeviceDriver, DeviceDriverKind, DeviceId, NoSysDeviceDriver } from './deviceDriver';
 import { BaseFileDescriptor, FileDescriptor } from './fileDescriptor';
 import { Uri } from 'vscode';
@@ -25,6 +25,9 @@ class PipeFileDescriptor extends BaseFileDescriptor {
 }
 
 interface Stdin {
+	size: number;
+	ready(): boolean;
+	pollRead(): Promise<void>;
 	read(mode: 'max', maxBytesToRead: size): Promise<Uint8Array>;
 }
 
@@ -40,7 +43,7 @@ export function create(deviceId: DeviceId, stdin: Stdin | undefined, stdout: Std
 		return new PipeFileDescriptor(deviceId, fd, PipeBaseRights, PipeInheritingRights, 0, inodeCounter++);
 	}
 
-	const deviceDriver: Pick<CharacterDeviceDriver, 'kind' | 'id' | 'uri' | 'createStdioFileDescriptor' | 'fd_fdstat_get' | 'fd_filestat_get' | 'fd_read' | 'fd_write'> = {
+	const deviceDriver: Pick<CharacterDeviceDriver, 'kind' | 'id' | 'uri' | 'createStdioFileDescriptor' | 'fd_fdstat_get' | 'fd_filestat_get' | 'fd_read' | 'fd_write' | 'fd_bytesAvailable'> = {
 		kind: DeviceDriverKind.character,
 		id: deviceId,
 		uri: Uri.from({ scheme: 'wasi-pipe', authority: deviceId.toString() }),
@@ -117,7 +120,16 @@ export function create(deviceId: DeviceId, stdin: Stdin | undefined, stdout: Std
 				return Promise.resolve(buffer.byteLength);
 			}
 	 		throw new WasiError(Errno.badf);
-	 	}
+	 	},
+		async fd_bytesAvailable(fileDescriptor: FileDescriptor, wait = false): Promise<filesize> {
+			if (fileDescriptor.fd !== 0 || stdin === undefined) {
+				throw new WasiError(Errno.badf);
+			}
+			if (wait && !stdin.ready()) {
+			  await stdin.pollRead();
+		  }
+			return BigInt(stdin.size);
+		},
 	 };
 
 	return Object.assign({}, NoSysDeviceDriver, deviceDriver);

@@ -65,7 +65,7 @@ export interface DeviceDriver {
 	path_unlink_file(fileDescriptor: FileDescriptor, path: string): Promise<void>;
 
 	fd_create_prestat_fd(fd: fd): Promise<FileDescriptor>;
-	fd_bytesAvailable(fileDescriptor: FileDescriptor): Promise<filesize>;
+	fd_bytesAvailable(fileDescriptor: FileDescriptor, wait?: boolean): Promise<filesize>;
 }
 
 export interface FileSystemDeviceDriver extends DeviceDriver {

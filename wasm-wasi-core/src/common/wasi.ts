@@ -596,6 +596,7 @@ export namespace Errno {
 
 export class WasiError extends Error {
 	public readonly errno: errno;
+	public readonly _isWasiError = true;
 	constructor(errno: errno) {
 		super();
 		this.errno = errno;
