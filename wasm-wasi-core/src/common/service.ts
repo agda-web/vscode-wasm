@@ -981,11 +981,7 @@ export namespace DeviceWasiService {
 				const readEvents = await Promise.all(readEventThunks.map(th => th(false)));
 				let availReads = readEvents.filter(evt => evt !== null);
 
-				if (availReads.length > 0) {
-					availReads.forEach(evt => {
-						events.push(evt);
-					});
-				} else if (wait) {
+				if (availReads.length === 0 && wait) {
 					// FIXME: cancel other awaited read after the race
 					const awaitedRead = await Promise.race(readEventThunks.map(th => th(true)));
 					availReads = [awaitedRead!];
