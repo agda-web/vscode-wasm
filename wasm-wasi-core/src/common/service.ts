@@ -26,6 +26,10 @@ import { DeviceDrivers } from './kernel';
 import { RootFileSystemDeviceDriver } from './rootFileSystemDriver';
 import { CapturedPromise } from './promises';
 
+function isWasiError(error: any): error is WasiError {
+	return error?._isWasiError && typeof error?.errno === 'number';
+}
+
 export abstract class ServiceConnection {
 
 	private readonly wasiService: WasiService;
@@ -302,7 +306,7 @@ export namespace EnvironmentWasiService {
 		};
 
 		function handleError(error: any, def: errno = Errno.badf): errno {
-			if (error?._isWasiError && typeof error.errno === 'number') {
+			if (isWasiError(error)) {
 				return error.errno;
 			} else if (error instanceof vscode.FileSystemError) {
 				return code2Wasi.asErrno(error.code);
@@ -876,13 +880,18 @@ export namespace DeviceWasiService {
 				try {
 					const view = new DataView(memory);
 					let { events, timeout } = await handleSubscriptions(view, input, subscriptions);
-					if (timeout !== undefined && timeout !== 0n) {
+					const fdevents = events.filter(x => x.type !== Eventtype.clock);
+					if (fdevents.length > 0) {
+						events = fdevents;
+					} else if (timeout !== undefined && timeout !== 0n) {
 						// Timeout is in ns but sleep API is in ms.
 						await new Promise((resolve) => {
 							RAL().timer.setTimeout(resolve, BigInts.asNumber(timeout! / 1000000n));
 						});
 						// Reread the events. Timer will not change however the rest could have.
 						events = (await handleSubscriptions(view, input, subscriptions)).events;
+					} else {
+						events = (await handleSubscriptions(view, input, subscriptions, true)).events;
 					}
 					let event_offset = output;
 					for (const item of events) {
@@ -931,55 +940,61 @@ export namespace DeviceWasiService {
 			}
 		};
 
-		async function handleSubscriptions(memory: DataView, input: ptr, subscriptions: size) {
+		async function handleSubscriptions(memory: DataView, input: ptr, subscriptions: size, wait = false) {
 			let subscription_offset: ptr = input;
 			const events: Literal<event>[] = [];
+			const clockResults: { event: Literal<event>; timeout: bigint }[] = [];
 			let timeout: bigint | undefined;
-			let hasClock = false;
 
-			const subs: subscription[] = [];
+			const readEventThunks: ((wait: boolean) => Promise<Literal<event> | null>)[] = [];
+
 			for (let i = 0; i < subscriptions; i++) {
 				const subscription = Subscription.create(memory, subscription_offset);
-				subs.push(subscription);
-				if (subscription.u.type === Eventtype.clock) {
-					hasClock = true;
-				}
-				subscription_offset += Subscription.size;
-			}
-
-			const waitThunks: Promise<Literal<event>>[] = [];
-
-			for (let i = 0; i < subscriptions; i++) {
-				const subscription = subs[i];
 				const u = subscription.u;
 				switch (u.type) {
 					case Eventtype.clock:
 						const clockResult = handleClockSubscription(subscription);
-						if (timeout === undefined || timeout < clockResult.timeout) {
+						if (timeout === undefined || clockResult.timeout < timeout) {
 							timeout = clockResult.timeout;
 						}
-						events.push(clockResult.event);
+						clockResults.push(clockResult);
 						break;
 					case Eventtype.fd_read:
-						if (hasClock) {
-							const readEvent = await handleReadSubscription(subscription, false);
-							if (readEvent) {
-								events.push(readEvent);
-							}
-						} else {
-							waitThunks.push(handleReadSubscription(subscription, true));
-						}
+						const readEvent = (w: boolean) => handleReadSubscription(subscription, w);
+						readEventThunks.push(readEvent);
 						break;
 					case Eventtype.fd_write:
 						const writeEvent = handleWriteSubscription(subscription);
 						events.push(writeEvent);
 						break;
 				}
+				subscription_offset += Subscription.size;
 			}
 
-			(await Promise.all(waitThunks)).forEach(evt => {
-				events.push(evt);
+			clockResults.forEach(res => {
+				if (res.timeout === timeout) {
+					events.push(res.event);
+				}
 			});
+
+			if (events.length === 0 && readEventThunks.length > 0) {
+				const readEvents = await Promise.all(readEventThunks.map(th => th(false)));
+				let availReads = readEvents.filter(evt => evt !== null);
+
+				if (availReads.length > 0) {
+					availReads.forEach(evt => {
+						events.push(evt);
+					});
+				} else if (wait) {
+					// FIXME: cancel other awaited read after the race
+					const awaitedRead = await Promise.race(readEventThunks.map(th => th(true)));
+					availReads = [awaitedRead!];
+				}
+
+				availReads.forEach(evt => {
+					events.push(evt);
+				});
+			}
 
 			return { events, timeout };
 		}
@@ -1010,6 +1025,7 @@ export namespace DeviceWasiService {
 		async function handleReadSubscription(subscription: subscription, wait: false): Promise<null | Literal<event>>;
 		async function handleReadSubscription(subscription: subscription, wait: boolean): Promise<null | Literal<event>>;
 		async function handleReadSubscription(subscription: subscription, wait: boolean): Promise<null | Literal<event>> {
+			const UNAVAILABLE = 1n << 64n - 1n;
 			const fd = subscription.u.fd_read.file_descriptor;
 			try {
 				const fileDescriptor = getFileDescriptor(fd);
@@ -1021,7 +1037,7 @@ export namespace DeviceWasiService {
 				const available = await driver.fd_bytesAvailable(fileDescriptor, wait);
 				// FIXME: a closed stream is always available but fd_bytesAvailable may return zero
 				// to support EOT, we need a way to know the readiness
-				if (!wait && available === 0n) {
+				if (!wait && available === UNAVAILABLE) {
 					return null;
 				}
 				return {
@@ -1076,7 +1092,7 @@ export namespace DeviceWasiService {
 		}
 
 		function handleError(error: any, def: errno = Errno.badf): errno {
-			if (error._isWasiError) {
+			if (isWasiError(error)) {
 				return error.errno;
 			} else if (error instanceof vscode.FileSystemError) {
 				return code2Wasi.asErrno(error.code);

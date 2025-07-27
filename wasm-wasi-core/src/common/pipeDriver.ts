@@ -125,9 +125,13 @@ export function create(deviceId: DeviceId, stdin: Stdin | undefined, stdout: Std
 			if (fileDescriptor.fd !== 0 || stdin === undefined) {
 				throw new WasiError(Errno.badf);
 			}
-			if (wait && !stdin.ready()) {
-			  await stdin.pollRead();
-		  }
+			if (!stdin.ready()) {
+				if (wait) {
+					await stdin.pollRead();
+				} else {
+					return 1n << 64n - 1n;
+				}
+			}
 			return BigInt(stdin.size);
 		},
 	 };
