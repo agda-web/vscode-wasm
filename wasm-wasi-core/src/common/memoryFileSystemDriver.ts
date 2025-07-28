@@ -115,6 +115,9 @@ export class MemoryFileSystem extends fs.BaseFileSystem<DirectoryNode, FileNode,
 		const dirname = paths.dirname(path);
 		const basename = paths.basename(path);
 		const parent = this.getDirectoryNode(dirname);
+		if (parent.entries.get(basename)) {
+			throw new Error(`Cannot create ${basename} under ${dirname}: directory already exists`);
+		}
 		const node = DirectoryNode.create(parent, this.nextInode(), basename, timeInNanoseconds(Date.now()));
 		parent.entries.set(basename, node);
 	}

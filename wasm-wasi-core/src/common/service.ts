@@ -266,16 +266,32 @@ export namespace EnvironmentWasiService {
 			},
 			fd_prestat_get: async (memory: ArrayBuffer, fd: fd, bufPtr: ptr<prestat>): Promise<errno> => {
 				try {
-					const next = preStats.next();
-					if (next.done === true) {
-						fileDescriptors.switchToRunning(fd);
-						return Errno.badf;
+					// FIXME: current impl is broken; cannot be called out-of-order or after program init
+					// this workaround remedies it partially with a simple upsert strategy
+					async function lookupMountPoint(fd: fd) {
+						if ($preStatDirnames.has(fd)) {
+							return $preStatDirnames.get(fd)!;
+						}
+
+						// still, this cannot be called out-of-order
+						const next = preStats.next();
+						if (next.done === true) {
+							// MUST throw EBADF
+							try {
+							  fileDescriptors.switchToRunning(fd);
+							} catch (_e) {}
+							throw new WasiError(Errno.badf);
+						}
+
+						const [ mountPoint, driver ] = next.value;
+						const fileDescriptor = await driver.fd_create_prestat_fd(fd);
+						fileDescriptors.add(fileDescriptor);
+						fileDescriptors.setRoot(driver, fileDescriptor);
+						$preStatDirnames.set(fileDescriptor.fd, mountPoint);
+						return mountPoint;
 					}
-					const [ mountPoint, driver ] = next.value;
-					const fileDescriptor = await driver.fd_create_prestat_fd(fd);
-					fileDescriptors.add(fileDescriptor);
-					fileDescriptors.setRoot(driver, fileDescriptor);
-					$preStatDirnames.set(fileDescriptor.fd, mountPoint);
+
+					const mountPoint = await lookupMountPoint(fd);
 					const view = new DataView(memory);
 					const prestat = Prestat.create(view, bufPtr);
 					prestat.preopentype = Preopentype.dir;
@@ -293,8 +309,9 @@ export namespace EnvironmentWasiService {
 						return Promise.resolve(Errno.badf);
 					}
 					const bytes = $encoder.encode(dirname);
+					// because prestat dirnames are not zero-terminated, this is actually reasonable
 					if (bytes.byteLength !== pathLen) {
-						Errno.badmsg;
+						return Promise.resolve(Errno.badmsg);
 					}
 					const raw = new Uint8Array(memory, pathPtr);
 					raw.set(bytes);
