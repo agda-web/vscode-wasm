@@ -200,8 +200,6 @@ export namespace EnvironmentWasiService {
 		const $encoder: RAL.TextEncoder = RAL().TextEncoder.create(options?.encoding);
 		const $preStatDirnames: Map<fd, string> = new Map();
 
-		fileDescriptors.switchToRunning(3 + preStats.length);
-
 		const result: EnvironmentWasiService = {
 			args_sizes_get: (memory: ArrayBuffer, argvCount_ptr: ptr<u32>, argvBufSize_ptr: ptr<u32>): Promise<errno> => {
 				let count = 0;
@@ -272,6 +270,9 @@ export namespace EnvironmentWasiService {
 						return Errno.badf;
 					}
 					if (fd - 3 >= preStats.length) {
+						if (fd - 3 === preStats.length) {
+							fileDescriptors.switchToRunning(fd);
+						}
 						return Errno.badf;
 					}
 					const [ mountPoint, driver ] = preStats[fd - 3];
