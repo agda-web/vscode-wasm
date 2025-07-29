@@ -251,9 +251,15 @@ class FileSystem {
 		const parts = this.getPathSegments(path);
 		if (parts.length === 1) {
 			if (parts[0] === '.') {
+				if (ref) {
+					parent.refs++;
+				}
 				return parent;
 			} else if (parts[0] === '..') {
 				if (parent.parent !== undefined) {
+					if (ref) {
+						parent.parent.refs++;
+					}
 					return parent.parent;
 				} else {
 					throw new WasiError(Errno.noent);
