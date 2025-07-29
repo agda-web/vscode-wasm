@@ -846,10 +846,23 @@ export function create(deviceId: DeviceId, baseUri: Uri, readOnly: boolean = fal
 			}
 			return result;
 		},
-		path_readlink(_fileDescriptor: FileDescriptor, _path: string): Promise<string> {
-			// For now we do nothing. If we need to implement this we need
-			// support from the VS Code API.
-			throw new WasiError(Errno.nolink);
+		async path_readlink(fileDescriptor: FileDescriptor, path: string): Promise<string> {
+			assertDirectoryDescriptor(fileDescriptor);
+			// TODO: check permission
+			const inode = fs.getNode(fileDescriptor.inode, NodeKind.Directory);
+			let filestat: FileStat | undefined;
+			try {
+				filestat = await vscode_fs.stat(fs.getUri(inode, path));
+			} catch {
+				throw new WasiError(Errno.noent);
+			}
+
+			if (!(filestat.type & FileType.SymbolicLink)) {
+				throw new WasiError(Errno.inval);
+			} else {
+				// we do not support symlinks nevertheless
+				throw new WasiError(Errno.acces);
+			}
 		},
 		async path_remove_directory(fileDescriptor: FileDescriptor, path: string): Promise<void> {
 			assertDirectoryDescriptor(fileDescriptor);

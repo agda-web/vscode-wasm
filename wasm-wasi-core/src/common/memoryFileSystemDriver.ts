@@ -130,6 +130,24 @@ export class MemoryFileSystem extends fs.BaseFileSystem<DirectoryNode, FileNode,
 		parent.entries.set(basename, node);
 	}
 
+	public createFileAt(dirnode: DirectoryNode, path: string, content: Uint8Array | { size: bigint; reader: () => Promise<Uint8Array> }): FileNode {
+		// if (path === '.' || path === '..') {
+		// 	throw new Error('Illegal file name');
+		// }
+		const dirname = paths.dirname(path);
+		const basename = paths.basename(path);
+		const parent = this.findNode(dirnode, dirname);
+		if (parent === undefined) {
+			throw new Error('ENOENT: No such directory');
+		}
+		if (parent.filetype !== Filetype.directory) {
+			throw new Error('ENOTDIR: Is not a directory');
+		}
+		const node = FileNode.create(parent, this.nextInode(), basename, timeInNanoseconds(Date.now()), content);
+		parent.entries.set(basename, node);
+		return node;
+	}
+
 	public createReadable(path: string): Readable {
 		const dirname = paths.dirname(path);
 		const basename = paths.basename(path);
@@ -238,8 +256,8 @@ export class MemoryFileSystem extends fs.BaseFileSystem<DirectoryNode, FileNode,
 }
 
 // When mounted the file system is readonly for now. We need to invest to make this writable and we need a use case first.
-const DirectoryBaseRights: rights = Rights.fd_readdir | Rights.path_filestat_get | Rights.fd_filestat_get | Rights.path_open | Rights.path_create_file | Rights.path_create_directory;
-const FileBaseRights: rights = Rights.fd_read | Rights.fd_seek | Rights.fd_tell | Rights.fd_advise | Rights.fd_filestat_get | Rights.poll_fd_readwrite;
+const DirectoryBaseRights: rights = Rights.fd_readdir | Rights.path_filestat_get | Rights.fd_filestat_get | Rights.path_open | Rights.path_create_file | Rights.path_create_directory | Rights.path_unlink_file | Rights.fd_filestat_set_size;
+const FileBaseRights: rights = Rights.fd_read | Rights.fd_seek | Rights.fd_tell | Rights.fd_advise | Rights.fd_filestat_get | Rights.poll_fd_readwrite | Rights.path_unlink_file | Rights.fd_filestat_set_size | Rights.fd_write;
 const DirectoryInheritingRights: rights = DirectoryBaseRights | FileBaseRights;
 const DirectoryOnlyBaseRights: rights = DirectoryBaseRights & ~FileBaseRights;
 const FileOnlyBaseRights: rights = FileBaseRights & DirectoryBaseRights;
@@ -306,7 +324,7 @@ export function create(deviceId: DeviceId, memfs: MemoryFileSystem): FileSystemD
 		result.mtim = node.mtime;
 	}
 
-	const $driver: ReadonlyFileSystemDeviceDriver & Pick<FileSystemDeviceDriver, 'fd_write' | 'fd_pwrite'> = {
+	const $driver: ReadonlyFileSystemDeviceDriver & Pick<FileSystemDeviceDriver, 'fd_write' | 'fd_pwrite' | 'path_unlink_file' | 'path_create_directory' | 'fd_filestat_set_size'> = {
 		kind: DeviceDriverKind.fileSystem,
 		uri: $fs.uri,
 		id: deviceId,
@@ -426,6 +444,24 @@ export function create(deviceId: DeviceId, memfs: MemoryFileSystem): FileSystemD
 			}
 			return bytesWritten;
 		},
+		async path_create_directory(fileDescriptor: FileDescriptor, path: string) {
+			assertDirectoryDescriptor(fileDescriptor);
+			// TODO: check permissions
+			const node = $fs.findNode(path);
+			if (node !== undefined) {
+				throw new WasiError(Errno.exist);
+			}
+			const dirname = paths.dirname(path);
+			const parent = $fs.findNode(dirname);
+			if (parent === undefined) {
+				throw new WasiError(Errno.noent);
+			}
+			try {
+				$fs.createDirectory(path);
+			} catch {
+				throw new WasiError(Errno.acces);
+			}
+		},
 		async path_filestat_get(fileDescriptor: FileDescriptor, _flags: lookupflags, path: string, result: filestat): Promise<void> {
 			assertDirectoryDescriptor(fileDescriptor);
 			const target = $fs.findNode(fileDescriptor.node, path);
@@ -434,15 +470,25 @@ export function create(deviceId: DeviceId, memfs: MemoryFileSystem): FileSystemD
 			}
 			assignStat(result, target);
 		},
+		async fd_filestat_set_size() {
+			// TODO
+		},
+		async path_unlink_file() {
+			// TODO
+		},
 		path_open(fileDescriptor: FileDescriptor, _dirflags: lookupflags, path: string, oflags: oflags, fs_rights_base: rights, fs_rights_inheriting: rights, fdflags: fdflags, fdProvider: FdProvider): Promise<FileDescriptor> {
 			assertDirectoryDescriptor(fileDescriptor);
 
 			const target = $fs.findNode(fileDescriptor.node, path);
 			if (target === undefined) {
 				if (Oflags.creatOn(oflags)) {
-					throw new WasiError(Errno.perm);
+					// TODO: check permissions
+					const target = $fs.createFileAt(fileDescriptor.node, path, new Uint8Array());
+					const desc = new fs.FileNodeDescriptor(deviceId, fdProvider.next(), fileDescriptor.childFileRights(fs_rights_base, DirectoryOnlyBaseRights), fdflags, target.inode, target);
+					return Promise.resolve(desc);
+				} else {
+					throw new WasiError(Errno.noent);
 				}
-				throw new WasiError(Errno.noent);
 			}
 			if (target.filetype !== Filetype.directory && Oflags.directoryOn(oflags)) {
 				throw new WasiError(Errno.notdir);

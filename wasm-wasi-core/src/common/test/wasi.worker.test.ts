@@ -830,7 +830,7 @@ suite(`Filesystem - ${memoryQualifier}`, () => {
 		const buffer = memory.alloc(1024);
 		const bufUsed = memory.allocUint32();
 		const errno = wasi.path_readlink(rootFd, path.$ptr, path.byteLength, buffer.$ptr, buffer.byteLength, bufUsed.$ptr);
-		assert.strictEqual(errno, Errno.nolink);
+		assert.strictEqual(errno, Errno.inval);
 	});
 
 	test('path_remove_directory', () => {
