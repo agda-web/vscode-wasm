@@ -1,5 +1,5 @@
 {
-	"name": "@vscode/wasm-wasi-lsp",
+	"name": "@agda-web/wasm-wasi-lsp",
 	"version": "0.1.0-pre.8",
 	"description": "A npm package to ease implementing language servers in WebAssembly with WASI.",
 	"author": "Visual Studio Code Team",
