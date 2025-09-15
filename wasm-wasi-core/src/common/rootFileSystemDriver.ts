@@ -363,6 +363,10 @@ export function create(deviceId: DeviceId, rootFileDescriptors: { getRoot(device
 			}
 			return result;
 		},
+		async path_readlink(_fileDescriptor: FileDescriptor, _path: string): Promise<string> {
+			// FIXME: just avoid returning nosys
+			throw new WasiError(Errno.inval);
+		},
 		async path_filestat_get(fileDescriptor: FileDescriptor, flags: lookupflags, path: string, result: filestat): Promise<void> {
 			assertDirectoryDescriptor(fileDescriptor);
 			const parentNode = $fs.getNode(fileDescriptor.inode);
