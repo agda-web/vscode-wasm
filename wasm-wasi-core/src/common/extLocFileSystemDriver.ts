@@ -499,7 +499,7 @@ export function create(deviceId: DeviceId, baseUri: Uri, dump: Dump.DirectoryNod
 			if (target === undefined) {
 				throw new WasiError(Errno.noent);
 			}
-			throw new WasiError(Errno.nolink);
+			throw new WasiError(Errno.inval);
 		},
 		fd_bytesAvailable(fileDescriptor: FileDescriptor): Promise<filesize> {
 			assertFileDescriptor(fileDescriptor);

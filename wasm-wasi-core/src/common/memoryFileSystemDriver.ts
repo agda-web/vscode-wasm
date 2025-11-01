@@ -256,7 +256,7 @@ export class MemoryFileSystem extends fs.BaseFileSystem<DirectoryNode, FileNode,
 }
 
 // When mounted the file system is readonly for now. We need to invest to make this writable and we need a use case first.
-const DirectoryBaseRights: rights = Rights.fd_readdir | Rights.path_filestat_get | Rights.fd_filestat_get | Rights.path_open | Rights.path_create_file | Rights.path_create_directory | Rights.path_unlink_file | Rights.fd_filestat_set_size;
+const DirectoryBaseRights: rights = Rights.fd_readdir | Rights.path_filestat_get | Rights.fd_filestat_get | Rights.path_open | Rights.path_create_file | Rights.path_create_directory | Rights.path_unlink_file | Rights.fd_filestat_set_size | Rights.path_readlink;
 const FileBaseRights: rights = Rights.fd_read | Rights.fd_seek | Rights.fd_tell | Rights.fd_advise | Rights.fd_filestat_get | Rights.poll_fd_readwrite | Rights.path_unlink_file | Rights.fd_filestat_set_size | Rights.fd_write;
 const DirectoryInheritingRights: rights = DirectoryBaseRights | FileBaseRights;
 const DirectoryOnlyBaseRights: rights = DirectoryBaseRights & ~FileBaseRights;
@@ -529,7 +529,7 @@ export function create(deviceId: DeviceId, memfs: MemoryFileSystem): FileSystemD
 			if (target === undefined) {
 				throw new WasiError(Errno.noent);
 			}
-			throw new WasiError(Errno.nolink);
+			throw new WasiError(Errno.inval);
 		},
 		fd_bytesAvailable(fileDescriptor: FileDescriptor): Promise<filesize> {
 			assertFileDescriptor(fileDescriptor);

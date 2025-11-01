@@ -363,9 +363,21 @@ export function create(deviceId: DeviceId, rootFileDescriptors: { getRoot(device
 			}
 			return result;
 		},
-		async path_readlink(_fileDescriptor: FileDescriptor, _path: string): Promise<string> {
-			// FIXME: just avoid returning nosys
-			throw new WasiError(Errno.inval);
+		async path_readlink(fileDescriptor: FileDescriptor, path: string): Promise<string> {
+			assertDirectoryDescriptor(fileDescriptor)
+			const parentNode = $fs.getNode(fileDescriptor.inode)
+			try {
+				// XXX: path is normalized too early; e.g., findNode(root, 'foo/bar/../baz') will succeed
+				//      if `foo/bar` does not exist but `foo/baz` does
+				const [_, relativePath] = $fs.findNode(parentNode, path)
+				if (relativePath !== undefined && relativePath !== '.') {
+					// the caller should ask the specific preopen
+					throw new WasiError(Errno.noent)
+				}
+			} catch (err) {
+				throw err
+			}
+			throw new WasiError(Errno.inval)
 		},
 		async path_filestat_get(fileDescriptor: FileDescriptor, flags: lookupflags, path: string, result: filestat): Promise<void> {
 			assertDirectoryDescriptor(fileDescriptor);
