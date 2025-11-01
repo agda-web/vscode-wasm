@@ -370,8 +370,9 @@ export function create(deviceId: DeviceId, rootFileDescriptors: { getRoot(device
 				// XXX: path is normalized too early; e.g., findNode(root, 'foo/bar/../baz') will succeed
 				//      if `foo/bar` does not exist but `foo/baz` does
 				const [_, relativePath] = $fs.findNode(parentNode, path)
-				if (relativePath !== undefined && relativePath !== '.') {
-					// the caller should ask the specific preopen
+				if (relativePath !== undefined && relativePath !== '.' && relativePath !== '/') {
+					// reject if the path ends inside a mountpoint;
+					// the caller should query from the specific preopen
 					throw new WasiError(Errno.noent)
 				}
 			} catch (err) {
