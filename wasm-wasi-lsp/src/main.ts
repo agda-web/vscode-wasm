@@ -154,8 +154,9 @@ export function createUriConverters(): { code2Protocol: (value: vscode.Uri) => s
 	} else {
 		for (const folder of folders) {
 			const uri = folder.uri.toString();
-			c2p.set(uri, `file:///workspaces/${folder.name}`);
-			p2c.set(`file:///workspaces/${folder.name}`, uri);
+			const puri = vscode.Uri.parse(`file:///workspaces/${folder.name}`).toString();
+			c2p.set(uri, puri);
+			p2c.set(puri, uri);
 		}
 	}
 	return {
