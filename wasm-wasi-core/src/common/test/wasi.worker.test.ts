@@ -761,23 +761,38 @@ suite(`Filesystem - ${memoryQualifier}`, () => {
 	test('fd_write - multiple ciovec', () => {
 		const memory = createMemory();
 		const filename = `/tmp/${uuid.v4()}`;
-		const hw = ['Hello ', 'World ', '!!!'];
+		const hw1 = ['Hello ', 'World ', '!!!'];
+		const hw2 = ['Hello ', 'World ', ', again', '!!!'];
 		const fd = FileSystem.createFile(memory, rootFd, filename);
-		const ciovecs = memory.allocStructArray(3, Ciovec);
-		let contentLength: number = 0;
-		for (let i = 0; i < hw.length; i++) {
-			const content = memory.allocBytes(encoder.encode(hw[i]));
-			ciovecs.get(i).buf = content.$ptr;
-			ciovecs.get(i).buf_len = content.byteLength;
-			contentLength += content.byteLength;
+		const ciovecs1 = memory.allocStructArray(3, Ciovec);
+		let contentLength1: number = 0;
+		for (let i = 0; i < hw1.length; i++) {
+			const content = memory.allocBytes(encoder.encode(hw1[i]));
+			ciovecs1.get(i).buf = content.$ptr;
+			ciovecs1.get(i).buf_len = content.byteLength;
+			contentLength1 += content.byteLength;
 		}
+		const ciovecs2 = memory.allocStructArray(4, Ciovec);
+		let contentLength2: number = 0;
+		for (let i = 0; i < hw2.length; i++) {
+			const content = memory.allocBytes(encoder.encode(hw2[i]));
+			ciovecs2.get(i).buf = content.$ptr;
+			ciovecs2.get(i).buf_len = content.byteLength;
+			contentLength2 += content.byteLength;
+		}
+
 		const bytesWritten = memory.allocUint32();
-		let errno = wasi.fd_write(fd, ciovecs.$ptr, ciovecs.size, bytesWritten.$ptr);
+		let errno1 = wasi.fd_write(fd, ciovecs1.$ptr, ciovecs1.size, bytesWritten.$ptr);
+		assert.strictEqual(errno1, Errno.success);
+		assert.strictEqual(bytesWritten.value, contentLength1);
+
+		let errno2 = wasi.fd_write(fd, ciovecs2.$ptr, ciovecs2.size, bytesWritten.$ptr);
+		assert.strictEqual(errno2, Errno.success);
+		assert.strictEqual(bytesWritten.value, contentLength2);
 		FileSystem.close(fd);
+
 		const check = FileSystem.openFile(memory, rootFd, filename);
-		assert.strictEqual(errno, Errno.success);
-		assert.strictEqual(bytesWritten.value, contentLength);
-		assert.strictEqual(decoder.decode(FileSystem.read(memory, check)), hw.join(''));
+		assert.strictEqual(decoder.decode(FileSystem.read(memory, check)), hw1.join('') + hw2.join(''));
 		FileSystem.close(check);
 	});
 

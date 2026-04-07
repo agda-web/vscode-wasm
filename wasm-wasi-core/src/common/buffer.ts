@@ -14,6 +14,28 @@ export function read(content: Uint8Array, offset: number, buffers: Uint8Array[])
 	return totalBytesRead;
 }
 
+// copied from TS's es2024.arraybuffer.d.ts
+interface MaybeResizableArrayBuffer extends ArrayBuffer {
+	get maxByteLength(): number;
+	get resizable(): boolean;
+	resize: (newByteLength?: number) => void;
+}
+
+interface ResizableArrayBufferConstructor extends ArrayBufferConstructor {
+	new (byteLength: number, options?: { maxByteLength?: number; }): MaybeResizableArrayBuffer;
+}
+
+declare const ArrayBuffer: ResizableArrayBufferConstructor;
+
+let isArrayBufferResizingSupported: boolean | undefined = undefined;
+function canResizeArrayBuffers() {
+  if (isArrayBufferResizingSupported !== undefined) {
+  	return isArrayBufferResizingSupported;
+  }
+  const ab = new ArrayBuffer(1, { maxByteLength: 4 });
+  return (isArrayBufferResizingSupported = !!ab.resizable);
+}
+
 export function write(content: Uint8Array, offset: number, buffers: Uint8Array[]): [Uint8Array, size] {
 	let bytesToWrite: size = 0;
 	for (const bytes of buffers) {
@@ -24,22 +46,27 @@ export function write(content: Uint8Array, offset: number, buffers: Uint8Array[]
 
 	// Do we need to increase the buffer
 	if (newSize > content.byteLength) {
-		interface ResizeableArrayBuffer extends ArrayBuffer {
-			resize: (newByteLength: number) => void;
-			maxByteLength: number;
-		}
-		//Utilize ECMAScript 2024 In-Place Resizable ArrayBuffers
-
-		const buffer = content.buffer as ResizeableArrayBuffer;
-		const oldSize = buffer.maxByteLength;
-
-		if(newSize < oldSize){
-			buffer.resize(newSize);
-		} else {
-			const newBuffer = new (ArrayBuffer as any)(newSize, { maxByteLength: Math.max(newSize, oldSize << 1) });
-			const newContent = new Uint8Array(newBuffer);
+		if (!canResizeArrayBuffers()) {
+			// resizing is unsupported; fallback to always copying over
+			const newContent = new Uint8Array(offset + bytesToWrite);
 			newContent.set(content);
 			content = newContent;
+		} else {
+			// Utilize ECMAScript 2024 In-Place Resizable ArrayBuffers
+			const buffer = content.buffer as MaybeResizableArrayBuffer;
+
+			const oldSize = buffer.maxByteLength;
+
+			if (newSize < oldSize) {
+				// content.byteLength < newSize < oldSize = content.buffer.maxByteLength;
+				// hence the buffer must be resizable
+				buffer.resize(newSize);
+			} else if (newSize > oldSize) {
+				const newBuffer = new ArrayBuffer(newSize, { maxByteLength: Math.max(newSize, oldSize << 1) });
+				const newContent = new Uint8Array(newBuffer);
+				newContent.set(content);
+				content = newContent;
+			}
 		}
 	}
 
