@@ -95,6 +95,13 @@ export abstract class WasiProcess {
 	private _stdout: ReadableStream | undefined;
 	private _stderr: ReadableStream | undefined;
 
+	// PATCH: store exit code so that the `terminate` call can return the same value if called repeatedly
+	private _exitCode: number | undefined;
+
+	protected get exitCode() {
+		return this._exitCode;
+	}
+
 	constructor(programName: string, options: ProcessOptions = {}) {
 		this.programName = programName;
 		let opt = Object.assign({}, options);
@@ -327,6 +334,8 @@ export abstract class WasiProcess {
 	protected resolveRunPromise(exitCode: exitcode): void {
 		if (this.resolveCallback !== undefined) {
 			this.resolveCallback(exitCode);
+			this._exitCode = exitCode;
+			this.resolveCallback = undefined;
 		}
 	}
 

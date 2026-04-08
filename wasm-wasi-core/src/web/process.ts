@@ -69,13 +69,15 @@ export class BrowserWasiProcess extends WasiProcess {
 	}
 
 	public async terminate(): Promise<number> {
-		const result = 0;
 		await this.procExit();
 
+		const result = this.exitCode ?? -256
 		// when terminated, web workers silently exit, and there are no events
 		// to hook on to know when they are done. To ensure that the run promise resolves,
 		// we call it here so callers awaiting `process.run()` will get a result.
-		this.resolveRunPromise(result);
+		if (this.exitCode === undefined) {
+			this.resolveRunPromise(result);
+		}
 		return result;
 	}
 
