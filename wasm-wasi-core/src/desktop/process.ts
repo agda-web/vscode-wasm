@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 /// <reference path="../../typings/webAssemblyNode.d.ts" preserve="true" />
 
-import { MessagePort, Worker } from 'node:worker_threads';
+import { MessagePort, Worker, WorkerOptions } from 'node:worker_threads';
 
 import { LogOutputChannel, Uri } from 'vscode';
 
@@ -60,7 +60,7 @@ export class NodeWasiProcess extends WasiProcess {
 
 	protected async startMain(wasiService: WasiService): Promise<void> {
 		const filename = Uri.joinPath(this.baseUri, './dist/desktop/mainWorker.js').fsPath;
-		this.mainWorker = new Worker(filename);
+		this.mainWorker = new Worker(filename, { name: this.programName } as WorkerOptions);
 		this.mainWorker.on('exit', async (exitCode: number) => {
 			this.cleanUpWorkers().catch(error => RAL().console.error(error));
 			this.cleanupFileDescriptors().catch(error => RAL().console.error(error));

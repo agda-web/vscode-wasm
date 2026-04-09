@@ -83,7 +83,7 @@ export class BrowserWasiProcess extends WasiProcess {
 
 	protected async startMain(wasiService: WasiService): Promise<void> {
 		const filename = Uri.joinPath(this.baseUri, './dist/web/mainWorker.js').toString();
-		this.mainWorker = new Worker(filename);
+		this.mainWorker = new Worker(filename, { name: this.programName });
 		const connection = new BrowserServiceConnection(wasiService, this.mainWorker, this.options.trace);
 		await connection.workerReady();
 		const module = await this.module;

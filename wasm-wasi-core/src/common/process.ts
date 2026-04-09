@@ -80,7 +80,7 @@ function channel(): LogOutputChannel {
 export abstract class WasiProcess {
 
 	private _state: 'created' | 'initialized' | 'running' | 'exiting' | 'exited';
-	private readonly programName: string;
+	protected readonly programName: string;
 	protected readonly options: Omit<ProcessOptions, 'trace'> & { trace: LogOutputChannel | undefined };
 	private localDeviceDrivers: DeviceDrivers;
 	private resolveCallback: ((value: number) => void) | undefined;
