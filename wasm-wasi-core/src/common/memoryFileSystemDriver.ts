@@ -149,6 +149,17 @@ export class MemoryFileSystem extends fs.BaseFileSystem<DirectoryNode, FileNode,
 		return node;
 	}
 
+	public unlinkFileAt(dirnode: DirectoryNode, path: string): void {
+		const target = this.findNode(dirnode, path);
+		if (target === undefined) {
+			throw new Error('ENOENT: No such file');
+		}
+		if (target.filetype === Filetype.directory) {
+			throw new Error('EISDIR: Is a directory');
+		}
+		target.parent.entries.delete(target.name);
+	}
+
 	public createReadable(path: string): Readable {
 		const dirname = paths.dirname(path);
 		const basename = paths.basename(path);
@@ -437,8 +448,16 @@ export function create(deviceId: DeviceId, memfs: MemoryFileSystem): FileSystemD
 		async fd_filestat_set_size() {
 			// TODO
 		},
-		async path_unlink_file() {
-			// TODO
+		async path_unlink_file(fileDescriptor: FileDescriptor, path: string) {
+			assertDirectoryDescriptor(fileDescriptor);
+			const target = $fs.findNode(fileDescriptor.node, path);
+			if (target === undefined) {
+				throw new WasiError(Errno.noent);
+			}
+			if (target.filetype === Filetype.directory) {
+				throw new WasiError(Errno.isdir);
+			}
+			$fs.unlinkFileAt(fileDescriptor.node, path);
 		},
 		path_open(fileDescriptor: FileDescriptor, _dirflags: lookupflags, path: string, oflags: oflags, fs_rights_base: rights, fs_rights_inheriting: rights, fdflags: fdflags, fdProvider: FdProvider): Promise<FileDescriptor> {
 			assertDirectoryDescriptor(fileDescriptor);
