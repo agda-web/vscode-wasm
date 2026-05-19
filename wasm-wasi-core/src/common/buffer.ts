@@ -22,18 +22,18 @@ interface MaybeResizableArrayBuffer extends ArrayBuffer {
 }
 
 interface ResizableArrayBufferConstructor extends ArrayBufferConstructor {
-	new (byteLength: number, options?: { maxByteLength?: number; }): MaybeResizableArrayBuffer;
+	new (byteLength: number, options?: { maxByteLength?: number }): MaybeResizableArrayBuffer;
 }
 
 declare const ArrayBuffer: ResizableArrayBufferConstructor;
 
 let isArrayBufferResizingSupported: boolean | undefined = undefined;
 function canResizeArrayBuffers() {
-  if (isArrayBufferResizingSupported !== undefined) {
-  	return isArrayBufferResizingSupported;
-  }
-  const ab = new ArrayBuffer(1, { maxByteLength: 4 });
-  return (isArrayBufferResizingSupported = !!ab.resizable);
+	if (isArrayBufferResizingSupported !== undefined) {
+		return isArrayBufferResizingSupported;
+	}
+	const ab = new ArrayBuffer(1, { maxByteLength: 4 });
+	return (isArrayBufferResizingSupported = !!ab.resizable);
 }
 
 export function write(content: Uint8Array, offset: number, buffers: Uint8Array[], forceNonResizable = false): [Uint8Array, size] {
