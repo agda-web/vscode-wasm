@@ -534,9 +534,21 @@ export function create(deviceId: DeviceId, baseUri: Uri, readOnly: boolean = fal
 		return writeContent(inode, content);
 	}
 
+	let _forceWriteNonResizableBuffers = false;
 	async function writeContent(node: FileNode, content?: Uint8Array): Promise<void> {
 		const toWrite = content ?? await fs.getContent(node, vscode_fs);
-		await vscode_fs.writeFile(fs.getUri(node), toWrite);
+		const doWrite = (buf: Uint8Array) => vscode_fs.writeFile(fs.getUri(node), buf);
+		await doWrite(toWrite).then(x => x, err => {
+			// sample error messages from `globalThis.crypto.subtle.digest({ name: 'sha-1' }, new Uint8Array(new ArrayBuffer(1, { maxByteLength: 2 })))`:
+			// * Chrome: TypeError: Failed to execute 'digest' on 'SubtleCrypto': The provided ArrayBufferView value must not be resizable.
+			// * Firefox: SubtleCrypto.digest: ArrayBufferView branch of (ArrayBufferView or ArrayBuffer) can't be a resizable ArrayBuffer or ArrayBufferView
+			if (!_forceWriteNonResizableBuffers && err.code === 'Unknown' && (err.message.includes('SubtleCrypto') || err.message.includes('digest'))) {
+				_forceWriteNonResizableBuffers = true;
+				// convert to non-resizable and try again
+				return doWrite(new Uint8Array(toWrite.buffer.slice(0)));
+			}
+			throw err;
+		});
 		if (content !== undefined) {
 			fs.setContent(node, content);
 		}
@@ -650,7 +662,7 @@ export function create(deviceId: DeviceId, baseUri: Uri, readOnly: boolean = fal
 		async fd_pwrite(fileDescriptor: FileDescriptor, _offset: filesize, buffers: Uint8Array[]): Promise<number> {
 			const offset = BigInts.asNumber(_offset);
 			const inode = fs.getNode(fileDescriptor.inode, NodeKind.File);
-			const [newContent, bytesWritten] = buffer.write(await fs.getContent(inode, vscode_fs), offset, buffers);
+			const [newContent, bytesWritten] = buffer.write(await fs.getContent(inode, vscode_fs), offset, buffers, _forceWriteNonResizableBuffers);
 			await writeContent(inode, newContent);
 			return bytesWritten;
 		},
@@ -725,7 +737,7 @@ export function create(deviceId: DeviceId, baseUri: Uri, readOnly: boolean = fal
 			if (Fdflags.appendOn(fileDescriptor.fdflags)) {
 				fileDescriptor.cursor = content.byteLength;
 			}
-			const [newContent, bytesWritten] = buffer.write(content, fileDescriptor.cursor, buffers);
+			const [newContent, bytesWritten] = buffer.write(content, fileDescriptor.cursor, buffers, _forceWriteNonResizableBuffers);
 			await writeContent(inode,newContent);
 			fileDescriptor.cursor = fileDescriptor.cursor + bytesWritten;
 			return bytesWritten;
