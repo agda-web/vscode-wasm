@@ -254,6 +254,11 @@ export type StdioTerminalDescriptor = {
 export type StdioPipeInDescriptor = {
 	kind: 'pipeIn';
 	pipe?: Writable;
+	/**
+	 * Whether reads from an empty pipe fail with `EAGAIN` instead of waiting
+	 * for data. Defaults to `false`.
+	 */
+	nonBlocking?: boolean;
 };
 
 /**
@@ -402,7 +407,7 @@ export interface WasmProcess {
 	/**
 	 * Terminate the Wasm process.
 	 */
-	 terminate(): Promise<number>;
+	terminate(): Promise<number>;
 }
 
 export enum Filetype {
