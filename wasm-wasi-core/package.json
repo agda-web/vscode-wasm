@@ -2,7 +2,7 @@
 	"name": "@agda-web/wasm-wasi-core",
 	"private": "true",
 	"publisher": "agda-web",
-	"version": "1.0.2999",
+	"version": "1.0.4999",
 	"displayName": "WASI based WebAssembly Execution Engine",
 	"description": "Executes WebAssemblies compiled to WASI Preview 1 on top of the VS Code API.",
 	"author": "MS",
